@@ -1,0 +1,26 @@
+# This project's virtual environment lives at the repo root (created via
+# `python -m venv .`), so its internals are ignored individually rather
+# than via a blanket venv .gitignore.
+Include/
+Lib/
+Scripts/
+pyvenv.cfg
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Generated at runtime from data/tickets_seed.json — not committed
+tickets.db
+
+# Secrets
+.env
+
+# Local Claude Code settings (machine-specific, not project config)
+.claude/settings.local.json
+
+# Editor / OS cruft
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
