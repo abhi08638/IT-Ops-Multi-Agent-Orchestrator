@@ -1,10 +1,14 @@
-"""Intake MCP Server — IT Ops Multi-Agent Orchestrator
+"""IT Ops MCP Server — IT Ops Multi-Agent Orchestrator
 ========================================================
 
-Exposes `check_ticket` as an MCP tool, backed by a real SQLite query
-(see db.py) over a seeded set of mock IT tickets. Any MCP client — Claude
-Desktop, Claude Code, or a custom client — can connect to this server over
-stdio and call the tool.
+Exposes two tools over MCP:
+    - check_ticket(ticket_id)  — real SQLite query (see db.py) over a
+      seeded set of mock IT tickets.
+    - get_runbook(issue_type)  — returns the matching markdown runbook
+      from runbooks/ (see runbook_lookup.py).
+
+Any MCP client — Claude Desktop, Claude Code, or a custom client — can
+connect to this server over stdio and call these tools.
 
 Run directly for local testing:
     python server.py
@@ -12,7 +16,7 @@ Run directly for local testing:
 Or point an MCP client at it, e.g. in Claude Desktop's config:
     {
       "mcpServers": {
-        "it-ops-intake": {
+        "it-ops-tools": {
           "command": "python",
           "args": ["/absolute/path/to/server.py"]
         }
@@ -23,8 +27,9 @@ Or point an MCP client at it, e.g. in Claude Desktop's config:
 from mcp.server.mcpserver import MCPServer
 
 from db import get_ticket, init_db
+from runbook_lookup import get_runbook_content
 
-mcp = MCPServer("it-ops-intake")
+mcp = MCPServer("it-ops-tools")
 
 
 @mcp.tool()
@@ -38,6 +43,21 @@ def check_ticket(ticket_id: str) -> dict:
         ticket_id: The unique ticket identifier, e.g. 'INC0012345'.
     """
     return get_ticket(ticket_id)
+
+
+@mcp.tool()
+def get_runbook(issue_type: str) -> str:
+    """Return the markdown runbook for a known IT issue type.
+
+    Use this to look up diagnosis, remediation, and escalation steps for
+    a category of issue (as opposed to a specific ticket).
+
+    Args:
+        issue_type: e.g. 'high_cpu', 'service_down', 'disk_full',
+            'network_latency'. Spaces and hyphens are normalized, so
+            'High CPU' and 'high-cpu' also match.
+    """
+    return get_runbook_content(issue_type)
 
 
 if __name__ == "__main__":

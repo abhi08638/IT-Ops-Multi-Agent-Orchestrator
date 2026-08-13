@@ -18,16 +18,23 @@ Each agent's capabilities are exposed as tools through an MCP server.
    summarized and auto-executed; anything high-severity or high-risk routes
    to a human for approval instead.
 
-## Intake MCP server
+## MCP server
 
-[`server.py`](server.py) exposes one tool, `check_ticket(ticket_id)`, backed
-by a real SQLite query ([`db.py`](db.py)) over a seeded set of ~12 mock IT
-tickets across a handful of systems (web cluster, VPN auth, billing API,
-internal wiki, email gateway, backups, checkout, HR portal).
+[`server.py`](server.py) currently exposes two tools:
 
-The seed data lives in [`data/tickets_seed.json`](data/tickets_seed.json)
-(versioned, human-diffable). `tickets.db` itself is generated from that
-fixture on first run and is not committed — delete it any time to reseed.
+- **`check_ticket(ticket_id)`** — a real SQLite query ([`db.py`](db.py))
+  over a seeded set of ~12 mock IT tickets across a handful of systems
+  (web cluster, VPN auth, billing API, internal wiki, email gateway,
+  backups, checkout, HR portal). Seed data lives in
+  [`data/tickets_seed.json`](data/tickets_seed.json) (versioned,
+  human-diffable); `tickets.db` itself is generated from that fixture on
+  first run and is not committed — delete it any time to reseed.
+- **`get_runbook(issue_type)`** — returns the matching markdown runbook
+  from [`runbooks/`](runbooks) ([`runbook_lookup.py`](runbook_lookup.py)
+  does the lookup, normalizing spaces/hyphens/case). Currently a direct
+  filename match against `high_cpu`, `service_down`, `disk_full`, and
+  `network_latency` — the eventual Triage agent will do this via RAG
+  instead, once there's a larger, less curated set of runbooks.
 
 ## Setup
 
@@ -46,7 +53,7 @@ Or point an MCP client at it, e.g. in Claude Desktop's config:
 ```json
 {
   "mcpServers": {
-    "it-ops-intake": {
+    "it-ops-tools": {
       "command": "python",
       "args": ["/absolute/path/to/server.py"]
     }
