@@ -1,0 +1,98 @@
+[
+  {
+    "ticket_id": "INC0012345",
+    "title": "Production web server unresponsive",
+    "description": "Customers report intermittent 502 errors on checkout.example.com starting around 09:14 UTC. Load balancer health checks are failing for 2 of 4 backend nodes.",
+    "severity": "critical",
+    "affected_system": "web-prod-cluster-03",
+    "status": "open"
+  },
+  {
+    "ticket_id": "INC0012346",
+    "title": "User unable to reset VPN password",
+    "description": "The self-service password reset portal returns a 500 error when the user submits a reset request. Affects a single user account.",
+    "severity": "low",
+    "affected_system": "vpn-auth-service",
+    "status": "open"
+  },
+  {
+    "ticket_id": "INC0012347",
+    "title": "Billing API returning stale exchange rates",
+    "description": "Invoices generated after 02:00 UTC show currency conversions using rates from the previous day. Suspect the FX rate cache job failed to run.",
+    "severity": "high",
+    "affected_system": "billing-api",
+    "status": "in_progress"
+  },
+  {
+    "ticket_id": "INC0012348",
+    "title": "Internal wiki search returns no results",
+    "description": "Search bar on the internal wiki returns an empty result set for every query, including terms known to exist on published pages.",
+    "severity": "medium",
+    "affected_system": "internal-wiki",
+    "status": "open"
+  },
+  {
+    "ticket_id": "INC0012349",
+    "title": "Outbound email delayed by up to 40 minutes",
+    "description": "Transactional emails (password resets, receipts) are being queued but not delivered promptly. Gateway logs show repeated connection timeouts to the downstream relay.",
+    "severity": "high",
+    "affected_system": "email-gateway",
+    "status": "open"
+  },
+  {
+    "ticket_id": "INC0012350",
+    "title": "Nightly backup job failed for db-cluster-02",
+    "description": "The 01:00 UTC backup job for db-cluster-02 exited with a disk-space error. No successful backup exists for the last 26 hours.",
+    "severity": "critical",
+    "affected_system": "backup-service",
+    "status": "open"
+  },
+  {
+    "ticket_id": "INC0012351",
+    "title": "Checkout page CSS not loading for some users",
+    "description": "A subset of users on older mobile browsers report an unstyled checkout page. Suspect a CDN cache-busting issue after the latest deploy.",
+    "severity": "medium",
+    "affected_system": "checkout-service",
+    "status": "resolved"
+  },
+  {
+    "ticket_id": "INC0012352",
+    "title": "HR portal login loop after SSO redirect",
+    "description": "Users are redirected back to the login page after successfully authenticating via SSO. Started shortly after the identity provider certificate rotation.",
+    "severity": "high",
+    "affected_system": "hr-portal",
+    "status": "in_progress"
+  },
+  {
+    "ticket_id": "INC0012353",
+    "title": "Elevated 4xx rate on billing-api",
+    "description": "Error rate dashboards show a spike in 400 responses on the /invoices endpoint, correlated with a client-side SDK release earlier today.",
+    "severity": "low",
+    "affected_system": "billing-api",
+    "status": "open"
+  },
+  {
+    "ticket_id": "INC0012354",
+    "title": "VPN throughput degraded during peak hours",
+    "description": "Users report significantly slower VPN speeds between 13:00 and 15:00 UTC. No packet loss observed, latency roughly doubled.",
+    "severity": "medium",
+    "affected_system": "vpn-auth-service",
+    "status": "open"
+  },
+  {
+    "ticket_id": "INC0012355",
+    "title": "web-prod-cluster-03 disk usage above 90%",
+    "description": "Monitoring alert fired for disk utilization on two nodes in the cluster. Log rotation appears to be misconfigured, retaining more history than expected.",
+    "severity": "medium",
+    "affected_system": "web-prod-cluster-03",
+    "status": "resolved"
+  },
+  {
+    "ticket_id": "INC0012356",
+    "title": "Backup restore test failed for hr-portal database",
+    "description": "Quarterly restore drill for the hr-portal database failed validation — restored row counts did not match the source snapshot.",
+    "severity": "high",
+    "affected_system": "backup-service",
+    "status": "open"
+  }
+]
