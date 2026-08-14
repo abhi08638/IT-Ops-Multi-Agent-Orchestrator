@@ -8,10 +8,9 @@ and MCP client configuration.
 
 from mcp.server.mcpserver import MCPServer
 
-from db import get_ticket, init_db
-from remediation_log import init_db as init_remediation_db
-from remediation_log import run_remediation as log_remediation
-from runbook_lookup import get_runbook_content
+import db
+import remediation_log
+import runbook_lookup
 
 mcp = MCPServer("it-ops-tools")
 
@@ -26,7 +25,7 @@ def check_ticket(ticket_id: str) -> dict:
     Args:
         ticket_id: The unique ticket identifier, e.g. 'INC0012345'.
     """
-    return get_ticket(ticket_id)
+    return db.get_ticket(ticket_id)
 
 
 @mcp.tool()
@@ -41,7 +40,7 @@ def get_runbook(issue_type: str) -> str:
             'network_latency'. Spaces and hyphens are normalized, so
             'High CPU' and 'high-cpu' also match.
     """
-    return get_runbook_content(issue_type)
+    return runbook_lookup.get_runbook_content(issue_type)
 
 
 @mcp.tool()
@@ -58,10 +57,10 @@ def run_remediation(action: str, target: str) -> dict:
         target: The system/host/service the action would apply to, e.g.
             'web-prod-cluster-03'.
     """
-    return log_remediation(action, target)
+    return remediation_log.run_remediation(action, target)
 
 
 if __name__ == "__main__":
-    init_db()
-    init_remediation_db()
+    db.init_db()
+    remediation_log.init_db()
     mcp.run(transport="stdio")
