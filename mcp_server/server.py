@@ -1,29 +1,9 @@
 """IT Ops MCP Server — IT Ops Multi-Agent Orchestrator
 ========================================================
 
-Exposes three tools over MCP:
-    - check_ticket(ticket_id)      — real SQLite query (see db.py) over a
-      seeded set of mock IT tickets.
-    - get_runbook(issue_type)      — returns the matching markdown runbook
-      from runbooks/ (see runbook_lookup.py).
-    - run_remediation(action, target) — mock executor: logs what it
-      "would" do (see remediation_log.py) without touching anything real.
-
-Any MCP client — Claude Desktop, Claude Code, or a custom client — can
-connect to this server over stdio and call these tools.
-
-Run directly for local testing:
-    python server.py
-
-Or point an MCP client at it, e.g. in Claude Desktop's config:
-    {
-      "mcpServers": {
-        "it-ops-tools": {
-          "command": "python",
-          "args": ["/absolute/path/to/server.py"]
-        }
-      }
-    }
+Exposes three tools over MCP: check_ticket, get_runbook, and
+run_remediation. See the project README for what each tool does, setup,
+and MCP client configuration.
 """
 
 from mcp.server.mcpserver import MCPServer
