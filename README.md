@@ -20,7 +20,7 @@ Each agent's capabilities are exposed as tools through an MCP server.
 
 ## MCP server
 
-[`server.py`](server.py) currently exposes two tools:
+[`server.py`](server.py) currently exposes three tools:
 
 - **`check_ticket(ticket_id)`** — a real SQLite query ([`db.py`](db.py))
   over a seeded set of ~12 mock IT tickets across a handful of systems
@@ -35,6 +35,13 @@ Each agent's capabilities are exposed as tools through an MCP server.
   filename match against `high_cpu`, `service_down`, `disk_full`, and
   `network_latency` — the eventual Triage agent will do this via RAG
   instead, once there's a larger, less curated set of runbooks.
+- **`run_remediation(action, target)`** — a **mock executor**
+  ([`remediation_log.py`](remediation_log.py)). It never runs a real
+  command; it only formats a description of what it "would" do (e.g.
+  "restarted service X on host Y") and appends it to a persistent,
+  queryable audit log (`remediation_log.db`, gitignored, generated at
+  runtime). No `subprocess`/`os.system`/`eval`/`exec` appears anywhere
+  near this tool, by design.
 
 ## Setup
 

@@ -9,8 +9,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Generated at runtime from data/tickets_seed.json — not committed
+# Generated at runtime — not committed
 tickets.db
+remediation_log.db
 
 # Secrets
 .env
