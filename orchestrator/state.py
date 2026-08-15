@@ -18,7 +18,8 @@ class IncidentState:
     issue_type: str | None = None
     severity: str | None = None
     runbook: str | None = None
-    decision: str | None = None  # "auto_remediated" | "escalated" | None
+    route: str | None = None  # "remediate" | "escalate" | None — the supervisor's routing choice
+    decision: str | None = None  # "auto_remediated" | "escalated" | None — the final outcome
     remediation_result: dict | None = None
     escalation_reason: str | None = None
     log: list[str] = field(default_factory=list)

@@ -11,6 +11,7 @@ across the whole pipeline:
         state = await RemediationAgent(tools).run(state)
 """
 
+import re
 from abc import ABC, abstractmethod
 
 from mcp_client import MCPTools, RunbookNotFoundError
@@ -43,17 +44,65 @@ _ACTION_BY_ISSUE_TYPE = {
 }
 
 
+def _contains_word(haystack: str, keyword: str) -> bool:
+    """Whole-word/phrase match, not substring containment.
+
+    Plain `kw in haystack` would match "down" inside "downstream" or
+    "load" inside "loading" — both real false positives found in the
+    seed data (INC0012349's "downstream relay" misclassified as
+    service_down; INC0012351's "CSS not loading" misclassified as
+    high_cpu). \\b word boundaries fix both without needing an
+    exceptions list.
+    """
+    return re.search(rf"\b{re.escape(keyword)}\b", haystack) is not None
+
+
 def classify_issue_type(ticket: dict) -> str | None:
     """Best-effort keyword classification of a ticket into a known
     runbook issue_type. Returns None if nothing scores above zero,
     rather than guessing."""
     haystack = f"{ticket.get('title', '')} {ticket.get('description', '')}".lower()
     scores = {
-        issue_type: sum(1 for kw in keywords if kw in haystack)
+        issue_type: sum(1 for kw in keywords if _contains_word(haystack, kw))
         for issue_type, keywords in _ISSUE_TYPE_KEYWORDS.items()
     }
     best_issue_type, best_score = max(scores.items(), key=lambda pair: pair[1])
     return best_issue_type if best_score > 0 else None
+
+
+def decide_route(state: IncidentState) -> tuple[str, str | None, str | None]:
+    """Decide whether an incident should be auto-remediated or escalated.
+
+    Pure function, no I/O — this is the single source of truth for the
+    routing decision, used by both the graph's supervisor node (to pick
+    an edge) and RemediationAgent/EscalationAgent (to act on it). A
+    known safe action AND a low/medium severity are both required to
+    remediate; anything else escalates.
+
+    Returns (route, action, reason):
+        route  — "remediate" or "escalate"
+        action — the proposed/executed action, if any (e.g. 'restart_service')
+        reason — set only when route == "escalate"
+    """
+    action = _ACTION_BY_ISSUE_TYPE.get(state.issue_type) if state.issue_type else None
+    target = (state.ticket or {}).get("affected_system", "unknown")
+
+    if action is None:
+        return (
+            "escalate",
+            None,
+            f"No known safe remediation action for issue_type={state.issue_type!r}",
+        )
+
+    if state.severity not in AUTO_REMEDIATE_SEVERITIES:
+        return (
+            "escalate",
+            action,
+            f"Severity {state.severity!r} requires human approval before "
+            f"remediation (proposed action: {action!r} on {target!r})",
+        )
+
+    return "remediate", action, None
 
 
 class Agent(ABC):
@@ -110,29 +159,26 @@ class TriageAgent(Agent):
 
 class RemediationAgent(Agent):
     """Proposes a remediation action; auto-executes it for low-severity
-    tickets with a known safe action, otherwise escalates."""
+    tickets with a known safe action, otherwise escalates.
+
+    Standalone use (manual chaining, see run_demo.py): decides AND acts.
+    In the LangGraph pipeline (graph.py), the supervisor node has
+    already made this same decision via decide_route() before routing
+    here — this agent re-derives it (a cheap, pure, deterministic call)
+    rather than trusting the router blindly, and only ever executes on
+    the "remediate" branch.
+    """
 
     async def run(self, state: IncidentState) -> IncidentState:
-        action = _ACTION_BY_ISSUE_TYPE.get(state.issue_type) if state.issue_type else None
+        route, action, reason = decide_route(state)
+
+        if route == "escalate":
+            state.decision = "escalated"
+            state.escalation_reason = reason
+            state.log.append(f"Remediation: {reason}")
+            return state
+
         target = (state.ticket or {}).get("affected_system", "unknown")
-
-        if action is None:
-            state.decision = "escalated"
-            state.escalation_reason = (
-                f"No known safe remediation action for issue_type={state.issue_type!r}"
-            )
-            state.log.append(f"Remediation: {state.escalation_reason}")
-            return state
-
-        if state.severity not in AUTO_REMEDIATE_SEVERITIES:
-            state.decision = "escalated"
-            state.escalation_reason = (
-                f"Severity {state.severity!r} requires human approval before "
-                f"remediation (proposed action: {action!r} on {target!r})"
-            )
-            state.log.append(f"Remediation: {state.escalation_reason}")
-            return state
-
         result = await self.tools.run_remediation(action, target)
         state.decision = "auto_remediated"
         state.remediation_result = result
@@ -140,4 +186,22 @@ class RemediationAgent(Agent):
             f"Remediation: severity={state.severity!r} -> auto-executed "
             f"action={action!r} on target={target!r}"
         )
+        return state
+
+
+class EscalationAgent(Agent):
+    """Marks an incident as escalated for human review.
+
+    Used on the graph's escalate branch, after the supervisor has
+    already routed here — this agent never calls run_remediation. It
+    re-derives the reason via decide_route() purely to produce the
+    human-readable explanation; it always escalates unconditionally,
+    since being invoked on this branch is itself the routing decision.
+    """
+
+    async def run(self, state: IncidentState) -> IncidentState:
+        _, _, reason = decide_route(state)
+        state.decision = "escalated"
+        state.escalation_reason = reason or "Escalated for human review."
+        state.log.append(f"Escalation: {state.escalation_reason}")
         return state
