@@ -123,6 +123,7 @@ agent-project/
 │   ├── run_demo.py
 │   └── run_graph_demo.py
 ├── tests/                 # unit tests for mcp_server/ and orchestrator/
+│   └── conftest.py        # shared sys.path setup + fake MCP client fixtures
 ├── requirements.txt
 ├── requirements-dev.txt
 └── .gitignore

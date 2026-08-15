@@ -6,64 +6,54 @@ together with a supervisor that routes to remediation or escalation.
 
 The supervisor node makes no MCP calls itself — it only calls the pure
 decide_route() function (also used by RemediationAgent/EscalationAgent)
-to pick a branch based on the shared IncidentState. Each node wraps the
-existing Agent classes from agents.py, so the decision/execution logic
-lives in exactly one place regardless of whether it's driven by this
-graph or the manual chaining in run_demo.py.
+to pick a branch based on the shared IncidentState. Each other node
+wraps an existing Agent class from agents.py, so the decision/execution
+logic lives in exactly one place regardless of whether it's driven by
+this graph or the manual chaining in run_demo.py.
 """
+
+from dataclasses import asdict
 
 from langgraph.graph import END, START, StateGraph
 
-from agents import EscalationAgent, IntakeAgent, RemediationAgent, TriageAgent, decide_route
+from agents import Agent, EscalationAgent, IntakeAgent, RemediationAgent, TriageAgent, decide_route
 from mcp_client import MCPTools
 from state import IncidentState
+
+
+def _agent_node(agent_cls: type[Agent], tools: MCPTools):
+    """Wrap an Agent subclass as a LangGraph node.
+
+    Runs the agent and hands back its *entire* updated state as the
+    node's output — LangGraph merges the returned dict into the shared
+    state, so this is equivalent to (and simpler than) hand-picking
+    just the fields each agent happens to touch.
+    """
+
+    async def node(state: IncidentState) -> dict:
+        updated = await agent_cls(tools).run(state)
+        return asdict(updated)
+
+    return node
 
 
 def build_graph(tools: MCPTools):
     """Build and compile the StateGraph for one MCPTools connection."""
     graph = StateGraph(IncidentState)
 
-    async def intake_node(state: IncidentState) -> dict:
-        updated = await IntakeAgent(tools).run(state)
-        return {"ticket": updated.ticket, "severity": updated.severity, "log": updated.log}
-
-    async def triage_node(state: IncidentState) -> dict:
-        updated = await TriageAgent(tools).run(state)
-        return {
-            "issue_type": updated.issue_type,
-            "runbook": updated.runbook,
-            "log": updated.log,
-        }
-
     async def supervisor_node(state: IncidentState) -> dict:
-        route, action, reason = decide_route(state)
-        detail = reason if route == "escalate" else f"proposed action={action!r}"
+        decision = decide_route(state)
+        detail = decision.reason if decision.route == "escalate" else f"proposed action={decision.action!r}"
         return {
-            "route": route,
-            "log": state.log + [f"Supervisor: routing to {route!r} ({detail})"],
+            "route": decision.route,
+            "log": state.log + [f"Supervisor: routing to {decision.route!r} ({detail})"],
         }
 
-    async def remediation_node(state: IncidentState) -> dict:
-        updated = await RemediationAgent(tools).run(state)
-        return {
-            "decision": updated.decision,
-            "remediation_result": updated.remediation_result,
-            "log": updated.log,
-        }
-
-    async def escalation_node(state: IncidentState) -> dict:
-        updated = await EscalationAgent(tools).run(state)
-        return {
-            "decision": updated.decision,
-            "escalation_reason": updated.escalation_reason,
-            "log": updated.log,
-        }
-
-    graph.add_node("intake", intake_node)
-    graph.add_node("triage", triage_node)
+    graph.add_node("intake", _agent_node(IntakeAgent, tools))
+    graph.add_node("triage", _agent_node(TriageAgent, tools))
     graph.add_node("supervisor", supervisor_node)
-    graph.add_node("remediation", remediation_node)
-    graph.add_node("escalation", escalation_node)
+    graph.add_node("remediation", _agent_node(RemediationAgent, tools))
+    graph.add_node("escalation", _agent_node(EscalationAgent, tools))
 
     graph.add_edge(START, "intake")
     graph.add_edge("intake", "triage")

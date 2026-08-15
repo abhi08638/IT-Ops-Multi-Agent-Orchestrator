@@ -13,6 +13,7 @@ across the whole pipeline:
 
 import re
 from abc import ABC, abstractmethod
+from typing import NamedTuple
 
 from mcp_client import MCPTools, RunbookNotFoundError
 from state import IncidentState
@@ -70,7 +71,14 @@ def classify_issue_type(ticket: dict) -> str | None:
     return best_issue_type if best_score > 0 else None
 
 
-def decide_route(state: IncidentState) -> tuple[str, str | None, str | None]:
+class RouteDecision(NamedTuple):
+    route: str  # "remediate" | "escalate"
+    action: str | None  # proposed/executed action, e.g. 'restart_service'
+    target: str  # the ticket's affected_system, or "unknown"
+    reason: str | None  # set only when route == "escalate"
+
+
+def decide_route(state: IncidentState) -> RouteDecision:
     """Decide whether an incident should be auto-remediated or escalated.
 
     Pure function, no I/O — this is the single source of truth for the
@@ -78,31 +86,22 @@ def decide_route(state: IncidentState) -> tuple[str, str | None, str | None]:
     an edge) and RemediationAgent/EscalationAgent (to act on it). A
     known safe action AND a low/medium severity are both required to
     remediate; anything else escalates.
-
-    Returns (route, action, reason):
-        route  — "remediate" or "escalate"
-        action — the proposed/executed action, if any (e.g. 'restart_service')
-        reason — set only when route == "escalate"
     """
     action = _ACTION_BY_ISSUE_TYPE.get(state.issue_type) if state.issue_type else None
     target = (state.ticket or {}).get("affected_system", "unknown")
 
     if action is None:
-        return (
-            "escalate",
-            None,
-            f"No known safe remediation action for issue_type={state.issue_type!r}",
-        )
+        reason = f"No known safe remediation action for issue_type={state.issue_type!r}"
+        return RouteDecision("escalate", None, target, reason)
 
     if state.severity not in AUTO_REMEDIATE_SEVERITIES:
-        return (
-            "escalate",
-            action,
+        reason = (
             f"Severity {state.severity!r} requires human approval before "
-            f"remediation (proposed action: {action!r} on {target!r})",
+            f"remediation (proposed action: {action!r} on {target!r})"
         )
+        return RouteDecision("escalate", action, target, reason)
 
-    return "remediate", action, None
+    return RouteDecision("remediate", action, target, None)
 
 
 class Agent(ABC):
@@ -170,21 +169,20 @@ class RemediationAgent(Agent):
     """
 
     async def run(self, state: IncidentState) -> IncidentState:
-        route, action, reason = decide_route(state)
+        decision = decide_route(state)
 
-        if route == "escalate":
+        if decision.route == "escalate":
             state.decision = "escalated"
-            state.escalation_reason = reason
-            state.log.append(f"Remediation: {reason}")
+            state.escalation_reason = decision.reason
+            state.log.append(f"Remediation: {decision.reason}")
             return state
 
-        target = (state.ticket or {}).get("affected_system", "unknown")
-        result = await self.tools.run_remediation(action, target)
+        result = await self.tools.run_remediation(decision.action, decision.target)
         state.decision = "auto_remediated"
         state.remediation_result = result
         state.log.append(
             f"Remediation: severity={state.severity!r} -> auto-executed "
-            f"action={action!r} on target={target!r}"
+            f"action={decision.action!r} on target={decision.target!r}"
         )
         return state
 
@@ -200,8 +198,8 @@ class EscalationAgent(Agent):
     """
 
     async def run(self, state: IncidentState) -> IncidentState:
-        _, _, reason = decide_route(state)
+        decision = decide_route(state)
         state.decision = "escalated"
-        state.escalation_reason = reason or "Escalated for human review."
+        state.escalation_reason = decision.reason or "Escalated for human review."
         state.log.append(f"Escalation: {state.escalation_reason}")
         return state

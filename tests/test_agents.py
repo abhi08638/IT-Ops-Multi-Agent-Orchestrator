@@ -6,78 +6,12 @@ separately via a live end-to-end check (see the PR description / the
 project's established live-verification pattern for the MCP tools).
 """
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "orchestrator"))
-
 from agents import IntakeAgent, RemediationAgent, TriageAgent, classify_issue_type
-from mcp_client import RunbookNotFoundError
 from state import IncidentState
 
-
-class FakeMCPTools:
-    """Duck-types MCPTools without touching a real MCP server.
-
-    - tickets: dict[ticket_id -> ticket dict], returned by check_ticket
-    - runbooks: dict[issue_type -> runbook text]; missing keys raise
-      RunbookNotFoundError, matching the real tool's behavior
-    - run_remediation_calls: records every call for assertions
-    """
-
-    def __init__(self, tickets=None, runbooks=None):
-        self.tickets = tickets or {}
-        self.runbooks = runbooks or {}
-        self.run_remediation_calls = []
-
-    async def check_ticket(self, ticket_id: str) -> dict:
-        return self.tickets[ticket_id]
-
-    async def get_runbook(self, issue_type: str) -> str:
-        if issue_type not in self.runbooks:
-            raise RunbookNotFoundError(f"No runbook found for issue_type={issue_type!r}")
-        return self.runbooks[issue_type]
-
-    async def run_remediation(self, action: str, target: str) -> dict:
-        self.run_remediation_calls.append((action, target))
-        return {
-            "id": len(self.run_remediation_calls),
-            "status": "simulated",
-            "action": action,
-            "target": target,
-            "message": f"Would run action {action!r} against target {target!r}.",
-            "note": "Mock executor — no real command was run.",
-        }
-
-
-CRITICAL_TICKET = {
-    "ticket_id": "INC0012345",
-    "title": "Production web server unresponsive",
-    "description": "Customers report intermittent 502 errors. Health checks failing.",
-    "severity": "critical",
-    "affected_system": "web-prod-cluster-03",
-    "status": "open",
-}
-
-LOW_SEVERITY_TICKET = {
-    "ticket_id": "INC0012346",
-    "title": "User unable to reset VPN password",
-    "description": "The self-service password reset portal returns a 500 error.",
-    "severity": "low",
-    "affected_system": "vpn-auth-service",
-    "status": "open",
-}
-
-UNCLASSIFIABLE_TICKET = {
-    "ticket_id": "INC9999999",
-    "title": "Unspecified issue reported",
-    "description": "No further detail was provided when the ticket was logged.",
-    "severity": "medium",
-    "affected_system": "unknown",
-    "status": "open",
-}
+from conftest import CRITICAL_TICKET, LOW_SEVERITY_TICKET, UNCLASSIFIABLE_TICKET, FakeMCPTools
 
 
 # --- classify_issue_type -----------------------------------------------

@@ -5,10 +5,6 @@ depend on) the real tickets.db, and can run in any order.
 """
 
 import json
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "mcp_server"))
 
 import db
 
