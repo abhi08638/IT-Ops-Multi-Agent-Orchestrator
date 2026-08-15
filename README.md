@@ -13,14 +13,14 @@ Each agent's capabilities are exposed as tools through an MCP server.
 2. **Triage agent** — classifies issue type from the ticket text (a
    deterministic keyword matcher for now, not RAG yet) and fetches the
    matching runbook via `get_runbook`. *(Built.)*
-3. **Remediation agent** — proposes an action; for low/medium severity
-   with a known safe action, calls `run_remediation` to execute it (mock
-   execution). *(Built.)*
-4. **Escalation** — not a separate agent yet: for high/critical severity,
-   or when no known safe action exists for the classified issue type,
-   the Remediation agent marks the incident `escalated` with a reason
-   instead of calling `run_remediation`. A dedicated escalation/reporting
-   agent (e.g. routing to a human-approval queue) is still planned.
+3. **Remediation agent** — for low/medium severity tickets with a known
+   safe action, calls `run_remediation` to execute it (mock execution).
+   *(Built.)*
+4. **Escalation agent** — marks an incident escalated for human review
+   (high/critical severity, or no known safe action for the classified
+   issue type) without ever calling `run_remediation`. *(Built.)* Still
+   just logs the escalation — routing it to an actual human-approval
+   queue is a future step.
 
 See [`orchestrator/`](orchestrator) for the agent implementations.
 
@@ -56,32 +56,53 @@ tools:
 
 ## Orchestrator
 
-[`orchestrator/agents.py`](orchestrator/agents.py) implements the three
+[`orchestrator/agents.py`](orchestrator/agents.py) implements the four
 agents above as classes sharing a common `Agent.run(state) -> state`
-interface, so they chain into a pipeline:
+interface. There are two ways they get chained together:
+
+**Manual chaining** ([`orchestrator/run_demo.py`](orchestrator/run_demo.py)):
 
 ```python
 async with mcp_tools_session() as tools:
     state = IncidentState(ticket_id="INC0012345")
     state = await IntakeAgent(tools).run(state)
     state = await TriageAgent(tools).run(state)
-    state = await RemediationAgent(tools).run(state)
+    state = await RemediationAgent(tools).run(state)  # decides AND acts
 ```
 
+**LangGraph `StateGraph`** ([`orchestrator/graph.py`](orchestrator/graph.py)),
+with a supervisor node that routes between remediation and escalation
+based on shared state:
+
+```
+intake -> triage -> supervisor --(remediate)--> remediation -> END
+                               \-(escalate)---> escalation  -> END
+```
+
+```bash
+python orchestrator/run_graph_demo.py
+```
+
+The supervisor makes no MCP calls itself — it calls `decide_route()`, a
+pure function shared with `RemediationAgent`/`EscalationAgent`, to pick
+an edge. `RemediationAgent` only ever executes on the remediate branch;
+`EscalationAgent` only ever escalates on the escalate branch — neither
+node blindly trusts the router, since `decide_route()` is deterministic
+and cheap to re-derive.
+
 - [`orchestrator/state.py`](orchestrator/state.py) — `IncidentState`, the
-  dataclass passed between agents (ticket, issue_type, severity,
-  runbook, decision, and a running `log` of what each agent did).
+  dataclass passed between agents/nodes (ticket, issue_type, severity,
+  runbook, `route` the supervisor picked, final `decision`, and a
+  running `log` of what happened and why). Used directly as the
+  LangGraph `state_schema` — no TypedDict/Pydantic conversion needed.
 - [`orchestrator/mcp_client.py`](orchestrator/mcp_client.py) — spawns
   `mcp_server/server.py` as a subprocess and wraps the MCP client
   session in a small typed `MCPTools` interface, so agents don't touch
   the MCP SDK directly (and are easy to unit-test against a fake).
-- [`orchestrator/run_demo.py`](orchestrator/run_demo.py) — runs the full
-  pipeline against a couple of sample tickets and prints the decision
-  trail for each:
-
-  ```bash
-  python orchestrator/run_demo.py
-  ```
+- [`orchestrator/run_demo.py`](orchestrator/run_demo.py) /
+  [`orchestrator/run_graph_demo.py`](orchestrator/run_graph_demo.py) —
+  run either pipeline against sample tickets and print the decision
+  trail for each.
 
 ## Project layout
 
@@ -98,7 +119,9 @@ agent-project/
 │   ├── agents.py
 │   ├── state.py
 │   ├── mcp_client.py
-│   └── run_demo.py
+│   ├── graph.py           # LangGraph StateGraph + supervisor routing
+│   ├── run_demo.py
+│   └── run_graph_demo.py
 ├── tests/                 # unit tests for mcp_server/ and orchestrator/
 ├── requirements.txt
 ├── requirements-dev.txt

@@ -94,6 +94,23 @@ def test_classify_issue_type_returns_none_when_no_keywords_match():
     assert classify_issue_type(UNCLASSIFIABLE_TICKET) is None
 
 
+def test_classify_issue_type_does_not_false_match_substrings():
+    """Regression test: 'down' must not match inside 'downstream', and
+    'load' must not match inside 'loading' -- found via a live sweep
+    across the seed tickets (INC0012349, INC0012351) before this fix."""
+    downstream_ticket = {
+        "title": "Outbound email delayed",
+        "description": "Gateway logs show repeated connection timeouts to the downstream relay.",
+    }
+    assert classify_issue_type(downstream_ticket) == "network_latency"  # not service_down
+
+    loading_ticket = {
+        "title": "Checkout page CSS not loading for some users",
+        "description": "CDN cache-busting issue after the latest deploy.",
+    }
+    assert classify_issue_type(loading_ticket) is None  # not high_cpu
+
+
 # --- IntakeAgent ---------------------------------------------------------
 
 @pytest.mark.asyncio
