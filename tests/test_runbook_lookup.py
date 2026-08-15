@@ -1,11 +1,6 @@
 """Unit tests for runbook_lookup.py."""
 
-import sys
-from pathlib import Path
-
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "mcp_server"))
 
 import runbook_lookup
 
