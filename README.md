@@ -120,6 +120,7 @@ agent-project/
 │   ├── state.py
 │   ├── mcp_client.py
 │   ├── graph.py           # LangGraph StateGraph + supervisor routing
+│   ├── tracing.py         # Langfuse instrumentation (no-op without keys)
 │   ├── run_demo.py
 │   └── run_graph_demo.py
 ├── tests/                 # unit tests for mcp_server/ and orchestrator/
@@ -139,6 +140,21 @@ timeline of what was built when.
 ```bash
 pip install -r requirements.txt
 ```
+
+### Tracing (optional)
+
+Every agent node, routing decision, and MCP tool call is instrumented
+with [Langfuse](https://langfuse.com) via `orchestrator/tracing.py`. To
+actually send traces somewhere, add to `.env`:
+
+```
+LANGFUSE_PUBLIC_KEY=your-public-key
+LANGFUSE_SECRET_KEY=your-secret-key
+LANGFUSE_HOST=https://cloud.langfuse.com   # or your self-hosted URL
+```
+
+Without these, tracing is a no-op — confirmed the app runs identically
+either way; it just doesn't produce traces until you have an account.
 
 Run the server directly (stdio transport):
 

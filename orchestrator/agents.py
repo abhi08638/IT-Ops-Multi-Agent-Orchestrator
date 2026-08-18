@@ -17,6 +17,7 @@ from typing import NamedTuple
 
 from mcp_client import MCPTools, RunbookNotFoundError
 from state import IncidentState
+from tracing import traced_agent, traced_decision
 
 # Severities that are safe to auto-remediate without a human in the loop.
 # Anything else (high/critical, or an unrecognized value) escalates.
@@ -78,6 +79,7 @@ class RouteDecision(NamedTuple):
     reason: str | None  # set only when route == "escalate"
 
 
+@traced_decision("supervisor_decide_route")
 def decide_route(state: IncidentState) -> RouteDecision:
     """Decide whether an incident should be auto-remediated or escalated.
 
@@ -118,6 +120,7 @@ class Agent(ABC):
 class IntakeAgent(Agent):
     """Pulls a ticket via the check_ticket MCP tool and seeds the state."""
 
+    @traced_agent("intake_agent")
     async def run(self, state: IncidentState) -> IncidentState:
         ticket = await self.tools.check_ticket(state.ticket_id)
         state.ticket = ticket
@@ -132,6 +135,7 @@ class IntakeAgent(Agent):
 class TriageAgent(Agent):
     """Classifies issue_type and fetches the matching runbook, if any."""
 
+    @traced_agent("triage_agent")
     async def run(self, state: IncidentState) -> IncidentState:
         if state.ticket is None:
             raise ValueError("TriageAgent requires state.ticket — run IntakeAgent first")
@@ -168,6 +172,7 @@ class RemediationAgent(Agent):
     the "remediate" branch.
     """
 
+    @traced_agent("remediation_agent")
     async def run(self, state: IncidentState) -> IncidentState:
         decision = decide_route(state)
 
@@ -197,6 +202,7 @@ class EscalationAgent(Agent):
     since being invoked on this branch is itself the routing decision.
     """
 
+    @traced_agent("escalation_agent")
     async def run(self, state: IncidentState) -> IncidentState:
         decision = decide_route(state)
         state.decision = "escalated"
