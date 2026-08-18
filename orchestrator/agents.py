@@ -17,10 +17,18 @@ from typing import NamedTuple
 
 from mcp_client import MCPTools, RunbookNotFoundError
 from state import IncidentState
+from tracing import traced_agent, traced_decision
 
 # Severities that are safe to auto-remediate without a human in the loop.
-# Anything else (high/critical, or an unrecognized value) escalates.
-AUTO_REMEDIATE_SEVERITIES = {"low", "medium"}
+AUTO_REMEDIATE_SEVERITIES = {"low"}
+
+# Severities above the auto-remediate threshold but not yet a full
+# escalation: these pause for a human "Approve" click (the hard
+# approval gate) rather than either executing blindly or being written
+# off as escalated. Anything else (high/critical, or an unrecognized
+# severity) escalates outright -- it's considered too risky to route
+# through the approval queue at all.
+APPROVAL_REQUIRED_SEVERITIES = {"medium"}
 
 # Best-effort keyword -> issue_type classifier. Real classification would
 # likely be an LLM call or a trained model; this is a deterministic
@@ -72,20 +80,26 @@ def classify_issue_type(ticket: dict) -> str | None:
 
 
 class RouteDecision(NamedTuple):
-    route: str  # "remediate" | "escalate"
+    route: str  # "remediate" | "await_approval" | "escalate"
     action: str | None  # proposed/executed action, e.g. 'restart_service'
     target: str  # the ticket's affected_system, or "unknown"
-    reason: str | None  # set only when route == "escalate"
+    reason: str | None  # set for every route except "remediate"
 
 
+@traced_decision("supervisor_decide_route")
 def decide_route(state: IncidentState) -> RouteDecision:
-    """Decide whether an incident should be auto-remediated or escalated.
+    """Decide whether an incident should auto-remediate, pause for human
+    approval, or escalate outright.
 
     Pure function, no I/O — this is the single source of truth for the
     routing decision, used by both the graph's supervisor node (to pick
-    an edge) and RemediationAgent/EscalationAgent (to act on it). A
-    known safe action AND a low/medium severity are both required to
-    remediate; anything else escalates.
+    an edge) and RemediationAgent/EscalationAgent (to act on it). Three
+    outcomes:
+      - "remediate": known safe action AND low severity -> execute now
+      - "await_approval": known safe action AND medium severity -> the
+        hard approval gate; pause and wait for a human "Approve"
+      - "escalate": no known safe action, or severity too high (or
+        unrecognized) to even offer for approval
     """
     action = _ACTION_BY_ISSUE_TYPE.get(state.issue_type) if state.issue_type else None
     target = (state.ticket or {}).get("affected_system", "unknown")
@@ -94,14 +108,22 @@ def decide_route(state: IncidentState) -> RouteDecision:
         reason = f"No known safe remediation action for issue_type={state.issue_type!r}"
         return RouteDecision("escalate", None, target, reason)
 
-    if state.severity not in AUTO_REMEDIATE_SEVERITIES:
+    if state.severity in AUTO_REMEDIATE_SEVERITIES:
+        return RouteDecision("remediate", action, target, None)
+
+    if state.severity in APPROVAL_REQUIRED_SEVERITIES:
         reason = (
             f"Severity {state.severity!r} requires human approval before "
             f"remediation (proposed action: {action!r} on {target!r})"
         )
-        return RouteDecision("escalate", action, target, reason)
+        return RouteDecision("await_approval", action, target, reason)
 
-    return RouteDecision("remediate", action, target, None)
+    reason = (
+        f"Severity {state.severity!r} is too high for automated remediation "
+        f"or the approval queue -- escalating for manual handling "
+        f"(proposed action: {action!r} on {target!r})"
+    )
+    return RouteDecision("escalate", action, target, reason)
 
 
 class Agent(ABC):
@@ -118,6 +140,7 @@ class Agent(ABC):
 class IntakeAgent(Agent):
     """Pulls a ticket via the check_ticket MCP tool and seeds the state."""
 
+    @traced_agent("intake_agent")
     async def run(self, state: IncidentState) -> IncidentState:
         ticket = await self.tools.check_ticket(state.ticket_id)
         state.ticket = ticket
@@ -132,6 +155,7 @@ class IntakeAgent(Agent):
 class TriageAgent(Agent):
     """Classifies issue_type and fetches the matching runbook, if any."""
 
+    @traced_agent("triage_agent")
     async def run(self, state: IncidentState) -> IncidentState:
         if state.ticket is None:
             raise ValueError("TriageAgent requires state.ticket — run IntakeAgent first")
@@ -163,15 +187,21 @@ class RemediationAgent(Agent):
     Standalone use (manual chaining, see run_demo.py): decides AND acts.
     In the LangGraph pipeline (graph.py), the supervisor node has
     already made this same decision via decide_route() before routing
-    here — this agent re-derives it (a cheap, pure, deterministic call)
-    rather than trusting the router blindly, and only ever executes on
-    the "remediate" branch.
+    here, and "await_approval" is handled by a dedicated approval_gate
+    node that actually pauses (see graph.py) -- this agent only ever
+    runs there on a confirmed "remediate" branch.
+
+    Standalone, there's no checkpointer to genuinely pause execution
+    with, so "await_approval" is treated the same as "escalate": mark
+    the incident escalated rather than silently auto-executing an
+    action severity says needs a human's approval first.
     """
 
+    @traced_agent("remediation_agent")
     async def run(self, state: IncidentState) -> IncidentState:
         decision = decide_route(state)
 
-        if decision.route == "escalate":
+        if decision.route != "remediate":
             state.decision = "escalated"
             state.escalation_reason = decision.reason
             state.log.append(f"Remediation: {decision.reason}")
@@ -197,6 +227,7 @@ class EscalationAgent(Agent):
     since being invoked on this branch is itself the routing decision.
     """
 
+    @traced_agent("escalation_agent")
     async def run(self, state: IncidentState) -> IncidentState:
         decision = decide_route(state)
         state.decision = "escalated"

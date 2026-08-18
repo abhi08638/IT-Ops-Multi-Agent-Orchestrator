@@ -4,14 +4,19 @@
 Include/
 Lib/
 Scripts/
+etc/
+share/
 pyvenv.cfg
 __pycache__/
 *.pyc
 .pytest_cache/
 
 # Generated at runtime — not committed
-tickets.db
-remediation_log.db
+mcp_server/tickets.db
+mcp_server/remediation_log.db
+orchestrator/approvals.db
+orchestrator/incidents.db
+orchestrator/checkpoints.db
 
 # Secrets
 .env
