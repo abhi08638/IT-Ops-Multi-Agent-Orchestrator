@@ -3,6 +3,11 @@ pipeline against a couple of sample tickets, against the real MCP
 server, and print what each agent decided and why.
 
     python orchestrator/run_demo.py
+
+Manual chaining has no checkpointer, so it can't genuinely pause a
+medium-severity ticket for approval the way graph.py's approval_gate
+node does — RemediationAgent treats "would need approval" the same as
+"escalate" here. See run_graph_demo.py for the real pause/resume flow.
 """
 
 import asyncio
@@ -11,8 +16,9 @@ from agents import IntakeAgent, RemediationAgent, TriageAgent
 from mcp_client import mcp_tools_session
 from state import IncidentState
 
-# A low-severity ticket (auto-remediates) and a critical one (escalates).
-DEMO_TICKET_IDS = ["INC0012346", "INC0012345"]
+# Low (auto-remediates), medium (escalates here -- no approval queue
+# without the graph), and critical (escalates).
+DEMO_TICKET_IDS = ["INC0012346", "INC0012354", "INC0012345"]
 
 
 async def run_pipeline(tools, ticket_id: str) -> IncidentState:

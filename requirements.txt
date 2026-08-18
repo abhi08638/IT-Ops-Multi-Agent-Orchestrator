@@ -1,4 +1,6 @@
 mcp[cli]
 langgraph
+langgraph-checkpoint-sqlite
 langfuse
 python-dotenv
+streamlit

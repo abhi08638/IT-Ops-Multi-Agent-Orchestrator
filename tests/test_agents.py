@@ -8,10 +8,16 @@ project's established live-verification pattern for the MCP tools).
 
 import pytest
 
-from agents import IntakeAgent, RemediationAgent, TriageAgent, classify_issue_type
+from agents import IntakeAgent, RemediationAgent, TriageAgent, classify_issue_type, decide_route
 from state import IncidentState
 
-from conftest import CRITICAL_TICKET, LOW_SEVERITY_TICKET, UNCLASSIFIABLE_TICKET, FakeMCPTools
+from conftest import (
+    CRITICAL_TICKET,
+    LOW_SEVERITY_TICKET,
+    MEDIUM_SEVERITY_TICKET,
+    UNCLASSIFIABLE_TICKET,
+    FakeMCPTools,
+)
 
 
 # --- classify_issue_type -----------------------------------------------
@@ -43,6 +49,53 @@ def test_classify_issue_type_does_not_false_match_substrings():
         "description": "CDN cache-busting issue after the latest deploy.",
     }
     assert classify_issue_type(loading_ticket) is None  # not high_cpu
+
+
+# --- decide_route (the 3-tier severity model) ---------------------------
+
+def test_decide_route_low_severity_remediates():
+    state = IncidentState(
+        ticket_id="INC0012346", ticket=LOW_SEVERITY_TICKET, severity="low",
+        issue_type="service_down",
+    )
+    decision = decide_route(state)
+    assert decision.route == "remediate"
+    assert decision.action == "restart_service"
+    assert decision.reason is None
+
+
+def test_decide_route_medium_severity_awaits_approval():
+    state = IncidentState(
+        ticket_id="INC0012354", ticket=MEDIUM_SEVERITY_TICKET, severity="medium",
+        issue_type="network_latency",
+    )
+    decision = decide_route(state)
+    assert decision.route == "await_approval"
+    assert decision.action == "scale_out"
+    assert decision.reason is not None
+
+
+def test_decide_route_high_or_critical_severity_escalates():
+    for severity in ("high", "critical"):
+        state = IncidentState(
+            ticket_id="INC0012345", ticket=CRITICAL_TICKET, severity=severity,
+            issue_type="service_down",
+        )
+        decision = decide_route(state)
+        assert decision.route == "escalate", f"severity={severity!r} should escalate"
+        assert decision.action == "restart_service"  # still surfaced, just not actioned
+        assert decision.reason is not None
+
+
+def test_decide_route_unclassified_issue_escalates_regardless_of_severity():
+    for severity in ("low", "medium", "high", "critical"):
+        state = IncidentState(
+            ticket_id="INC9999999", ticket=UNCLASSIFIABLE_TICKET, severity=severity,
+            issue_type=None,
+        )
+        decision = decide_route(state)
+        assert decision.route == "escalate"
+        assert decision.action is None
 
 
 # --- IntakeAgent ---------------------------------------------------------
@@ -134,6 +187,27 @@ async def test_remediation_agent_escalates_high_severity_instead_of_executing():
         ticket=CRITICAL_TICKET,
         severity="critical",
         issue_type="service_down",
+    )
+
+    state = await RemediationAgent(tools).run(state)
+
+    assert state.decision == "escalated"
+    assert state.escalation_reason is not None
+    assert tools.run_remediation_calls == []  # never actually executed
+
+
+@pytest.mark.asyncio
+async def test_remediation_agent_escalates_medium_severity_when_run_standalone():
+    """RemediationAgent has no checkpointer when run standalone (manual
+    chaining, no graph), so it can't genuinely pause for approval like
+    the graph's approval_gate node does -- it must escalate rather than
+    silently auto-execute an action severity says needs a human first."""
+    tools = FakeMCPTools()
+    state = IncidentState(
+        ticket_id="INC0012354",
+        ticket=MEDIUM_SEVERITY_TICKET,
+        severity="medium",
+        issue_type="network_latency",
     )
 
     state = await RemediationAgent(tools).run(state)
