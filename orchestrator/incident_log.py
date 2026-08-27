@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS incidents (
     route      TEXT,
     decision   TEXT NOT NULL,
     reason     TEXT,
+    action     TEXT,
+    target     TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -57,25 +59,32 @@ def record(
     route: str | None,
     decision: str,
     reason: str | None,
+    action: str | None = None,
+    target: str | None = None,
 ) -> None:
     """Upsert this thread's current outcome. created_at is only set on
     first insert; updated_at always reflects the latest call (e.g. when
-    a pending_approval row is later updated to auto_remediated)."""
+    a pending_approval row is later updated to auto_remediated).
+
+    action/target describe what was actually executed — set only when
+    decision == 'auto_remediated'; left None for escalated/pending rows,
+    since nothing was actually taken in those cases."""
     now = datetime.now(timezone.utc).isoformat()
     conn = _connect()
     try:
         conn.execute(
             """
             INSERT INTO incidents
-                (thread_id, ticket_id, title, severity, issue_type, route, decision, reason, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (thread_id, ticket_id, title, severity, issue_type, route, decision, reason, action, target, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(thread_id) DO UPDATE SET
                 title=excluded.title, severity=excluded.severity,
                 issue_type=excluded.issue_type, route=excluded.route,
                 decision=excluded.decision, reason=excluded.reason,
+                action=excluded.action, target=excluded.target,
                 updated_at=excluded.updated_at
             """,
-            (thread_id, ticket_id, title, severity, issue_type, route, decision, reason, now, now),
+            (thread_id, ticket_id, title, severity, issue_type, route, decision, reason, action, target, now, now),
         )
         conn.commit()
     finally:

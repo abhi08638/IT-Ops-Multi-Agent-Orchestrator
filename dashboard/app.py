@@ -29,6 +29,41 @@ st.set_page_config(page_title="IT Ops Orchestrator", page_icon="🛠️", layout
 approvals.init_db()
 incident_log.init_db()
 
+_DECISION_LABELS = {
+    "auto_remediated": "Auto-remediated",
+    "escalated": "Escalated",
+    "pending_approval": "Pending Approval",
+}
+
+# Natural, past-tense phrasing for each known action code — matches the
+# style of the mock executor's own log messages (see
+# mcp_server/remediation_log.py), rather than a generic title-cased
+# rendering of the action code.
+_ACTION_PHRASES = {
+    "restart_service": "Restarted service",
+    "clear_disk_space": "Cleared disk space",
+    "scale_out": "Scaled out",
+}
+
+
+def _humanize(value: str | None) -> str:
+    """Turn a snake_case code into regular text, e.g. 'network_latency'
+    -> 'Network Latency', 'high_cpu' -> 'High CPU'."""
+    if not value:
+        return "—"
+    return value.replace("_", " ").title().replace("Cpu", "CPU")
+
+
+def _action_taken(row: dict) -> str:
+    """A specific, realistic description of what was actually executed
+    -- e.g. 'Restarted service on vpn-auth-service' -- not just the
+    decision code. Only auto_remediated rows have one: nothing was
+    actually executed for escalated or still-pending rows."""
+    if not row["action"]:
+        return "—"
+    phrase = _ACTION_PHRASES.get(row["action"], _humanize(row["action"]))
+    return f"{phrase} on {row['target']}"
+
 
 def _approve(thread_id: str, ticket_id: str) -> None:
     """Resume a paused thread for real: spawns a fresh MCP session
@@ -97,9 +132,10 @@ else:
             {
                 "Ticket": row["ticket_id"],
                 "Title": row["title"],
-                "Severity": row["severity"],
-                "Issue Type": row["issue_type"],
-                "Decision": row["decision"],
+                "Severity": _humanize(row["severity"]),
+                "Issue Type": _humanize(row["issue_type"]),
+                "Decision": _DECISION_LABELS.get(row["decision"], _humanize(row["decision"])),
+                "Action Taken": _action_taken(row),
                 "Updated": row["updated_at"],
             }
             for row in recent

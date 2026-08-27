@@ -1,27 +1,29 @@
 """orchestrator/run_graph_demo.py — run the LangGraph StateGraph
 (intake -> triage -> supervisor -> remediation / approval_gate /
 escalation) against a few sample tickets, against the real MCP server,
-and print the decision trail for each — including a full pause-then-
-approve cycle for the medium-severity ticket, demonstrating the same
-resume path the Streamlit dashboard's "Approve" button uses.
+and print the decision trail for each.
 
     python orchestrator/run_graph_demo.py
+
+The medium-severity tickets pause at the hard approval gate and are
+left pending on purpose — run `streamlit run dashboard/app.py` and
+click Approve there to resume them for real, rather than this script
+resolving them itself.
 """
 
 import asyncio
 
-import approvals
-from graph import resume_incident, run_incident
+from graph import run_incident
 from mcp_client import mcp_tools_session
 
-# Low (auto-remediates), medium (pauses for approval -- resumed below),
-# critical (escalates outright), and an unknown ticket ID (falls back
-# to the default record, fails classification, and escalates even
-# though its severity alone would otherwise qualify).
+# Low (auto-remediates), critical (escalates outright), and an unknown
+# ticket ID (falls back to the default record, fails classification,
+# and escalates even though its severity alone would otherwise qualify).
 DEMO_TICKET_IDS = ["INC0012346", "INC0012345", "INC_DOES_NOT_EXIST"]
 
-# This one pauses at the hard approval gate.
-APPROVAL_DEMO_TICKET_ID = "INC0012354"
+# Medium severity -- these pause at the hard approval gate and are left
+# pending for the dashboard, not resumed by this script.
+APPROVAL_DEMO_TICKET_IDS = ["INC0012354", "INC0012355"]
 
 
 def _print(ticket_id: str, state) -> None:
@@ -37,21 +39,14 @@ async def main() -> None:
             state = await run_incident(tools, ticket_id)
             _print(ticket_id, state)
 
-        # --- Hard approval gate: pause, then approve ---
-        paused = await run_incident(tools, APPROVAL_DEMO_TICKET_ID)
-        _print(APPROVAL_DEMO_TICKET_ID, paused)
-        print("  (paused -- this is exactly what shows up in the dashboard's pending-approvals queue)")
+        for ticket_id in APPROVAL_DEMO_TICKET_IDS:
+            state = await run_incident(tools, ticket_id)
+            _print(ticket_id, state)
 
-        pending = [
-            row for row in approvals.list_pending()
-            if row["ticket_id"] == APPROVAL_DEMO_TICKET_ID
-        ][0]
-        print(f"\n[Simulating dashboard: clicking Approve on thread {pending['thread_id']!r}]")
-
-        resumed = await resume_incident(
-            tools, pending["thread_id"], APPROVAL_DEMO_TICKET_ID, approved=True
-        )
-        _print(f"{APPROVAL_DEMO_TICKET_ID} (resumed)", resumed)
+    print(
+        f"\n{len(APPROVAL_DEMO_TICKET_IDS)} ticket(s) left pending approval. "
+        "Run `streamlit run dashboard/app.py` and click Approve to resume them for real."
+    )
 
 
 if __name__ == "__main__":

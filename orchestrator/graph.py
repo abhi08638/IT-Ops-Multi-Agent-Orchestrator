@@ -172,6 +172,7 @@ def _state_from_result(result: dict, ticket_id: str) -> IncidentState:
 
 
 def _record(state: IncidentState, thread_id: str) -> None:
+    result = state.remediation_result or {}
     incident_log.record(
         thread_id=thread_id,
         ticket_id=state.ticket_id,
@@ -181,6 +182,8 @@ def _record(state: IncidentState, thread_id: str) -> None:
         route=state.route,
         decision=state.decision or "unknown",
         reason=state.escalation_reason,
+        action=result.get("action"),
+        target=result.get("target"),
     )
 
 

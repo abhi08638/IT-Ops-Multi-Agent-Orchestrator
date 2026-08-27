@@ -33,6 +33,7 @@ def _seed(tmp_path, monkeypatch):
         thread_id="t1", ticket_id="INC0012346", title="VPN password reset",
         severity="low", issue_type="service_down", route="remediate",
         decision="auto_remediated", reason=None,
+        action="restart_service", target="vpn-auth-service",
     )
     incident_log.record(
         thread_id="t2", ticket_id="INC0012345", title="Web server unresponsive",
@@ -80,6 +81,46 @@ def test_dashboard_shows_pending_approval_with_approve_button(tmp_path, monkeypa
 
     assert any("INC0012354" in md.value for md in at.markdown)
     assert any(b.label == "Approve" for b in at.button)
+
+
+def test_dashboard_table_shows_realistic_action_not_the_decision_code(tmp_path, monkeypatch):
+    """Regression test: 'Action Taken' must be a specific, realistic
+    description (e.g. 'Restarted service on vpn-auth-service'), not
+    just a repeat of the Decision column ('Auto-remediated') and not a
+    raw snake_case code."""
+    _seed(tmp_path, monkeypatch)
+
+    at = AppTest.from_file(DASHBOARD_PATH)
+    at.run()
+
+    table = at.dataframe[0].value
+    row = table[table["Ticket"] == "INC0012346"].iloc[0]
+
+    assert row["Action Taken"] == "Restarted service on vpn-auth-service"
+    assert row["Action Taken"] != row["Decision"]
+    assert "_" not in row["Action Taken"]  # no leftover snake_case
+
+    # rows with nothing actually executed show a placeholder, not a
+    # fabricated action
+    pending_row = table[table["Ticket"] == "INC0012354"].iloc[0]
+    assert pending_row["Action Taken"] == "—"
+
+    escalated_row = table[table["Ticket"] == "INC0012345"].iloc[0]
+    assert escalated_row["Action Taken"] == "—"
+
+
+def test_dashboard_table_humanizes_severity_and_issue_type(tmp_path, monkeypatch):
+    _seed(tmp_path, monkeypatch)
+
+    at = AppTest.from_file(DASHBOARD_PATH)
+    at.run()
+
+    table = at.dataframe[0].value
+    row = table[table["Ticket"] == "INC0012354"].iloc[0]
+
+    assert row["Severity"] == "Medium"
+    assert row["Issue Type"] == "Network Latency"
+    assert row["Decision"] == "Pending Approval"
 
 
 def test_dashboard_handles_empty_state_without_exceptions(tmp_path, monkeypatch):

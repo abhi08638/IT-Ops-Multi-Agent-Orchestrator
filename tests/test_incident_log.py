@@ -23,6 +23,37 @@ def test_record_appears_in_list_recent(tmp_path, monkeypatch):
     assert recent[0]["decision"] == "auto_remediated"
 
 
+def test_record_stores_action_and_target_when_provided(tmp_path, monkeypatch):
+    _use_temp_db(tmp_path, monkeypatch)
+
+    incident_log.record(
+        thread_id="t1", ticket_id="INC0012346", title="VPN password reset",
+        severity="low", issue_type="service_down", route="remediate",
+        decision="auto_remediated", reason=None,
+        action="restart_service", target="vpn-auth-service",
+    )
+
+    row = incident_log.list_recent()[0]
+    assert row["action"] == "restart_service"
+    assert row["target"] == "vpn-auth-service"
+
+
+def test_record_leaves_action_and_target_none_by_default(tmp_path, monkeypatch):
+    """Escalated/pending rows have no action/target -- nothing was
+    actually executed for them."""
+    _use_temp_db(tmp_path, monkeypatch)
+
+    incident_log.record(
+        thread_id="t1", ticket_id="INC0012345", title="Web server unresponsive",
+        severity="critical", issue_type="service_down", route="escalate",
+        decision="escalated", reason="too risky",
+    )
+
+    row = incident_log.list_recent()[0]
+    assert row["action"] is None
+    assert row["target"] is None
+
+
 def test_record_upserts_by_thread_id_rather_than_duplicating(tmp_path, monkeypatch):
     """A pending_approval row later gets updated in place to
     auto_remediated once resumed -- not inserted as a second row."""
