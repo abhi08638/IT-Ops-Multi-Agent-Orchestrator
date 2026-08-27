@@ -93,7 +93,7 @@ def test_dashboard_table_shows_realistic_action_not_the_decision_code(tmp_path, 
     at = AppTest.from_file(DASHBOARD_PATH)
     at.run()
 
-    table = at.dataframe[0].value
+    table = at.table[0].value
     row = table[table["Ticket"] == "INC0012346"].iloc[0]
 
     assert row["Action Taken"] == "Restarted service on vpn-auth-service"
@@ -115,7 +115,7 @@ def test_dashboard_table_humanizes_severity_and_issue_type(tmp_path, monkeypatch
     at = AppTest.from_file(DASHBOARD_PATH)
     at.run()
 
-    table = at.dataframe[0].value
+    table = at.table[0].value
     row = table[table["Ticket"] == "INC0012354"].iloc[0]
 
     assert row["Severity"] == "Medium"

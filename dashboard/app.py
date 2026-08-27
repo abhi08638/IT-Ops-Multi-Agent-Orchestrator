@@ -127,7 +127,13 @@ recent = incident_log.list_recent(limit=20)
 if not recent:
     st.caption("No tickets processed yet. Run orchestrator/run_graph_demo.py to generate some.")
 else:
-    st.dataframe(
+    # st.table (plain HTML) rather than st.dataframe (canvas/WebGL-based
+    # glide-data-grid): the canvas grid was confirmed rendering an empty
+    # container in testing -- correctly sized, but with nothing painted
+    # inside it. st.table has no such dependency and is a fine trade
+    # for a table this size (no sorting/resizing/CSV-download, but it
+    # always renders).
+    st.table(
         [
             {
                 "Ticket": row["ticket_id"],
@@ -140,7 +146,6 @@ else:
             }
             for row in recent
         ],
-        use_container_width=True,
         hide_index=True,
     )
 
