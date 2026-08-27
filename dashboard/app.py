@@ -11,6 +11,7 @@ and checkpointer in orchestrator/run_graph_demo.py.
 """
 
 import asyncio
+import html
 import sys
 from pathlib import Path
 
@@ -63,6 +64,49 @@ def _action_taken(row: dict) -> str:
         return "—"
     phrase = _ACTION_PHRASES.get(row["action"], _humanize(row["action"]))
     return f"{phrase} on {row['target']}"
+
+
+_TABLE_COLUMNS = ["Ticket", "Title", "Severity", "Issue Type", "Decision", "Action Taken", "Updated"]
+
+
+def _recent_tickets_table_html(recent: list[dict]) -> str:
+    """Hand-rolled HTML table (st.table gives no per-cell control) so the
+    Decision cell can carry the escalation/approval reason as a native
+    hover tooltip via the title attribute -- only rows with a reason
+    (today, just escalated ones) get one."""
+    header_cells = "".join(f"<th style='text-align:left; padding:4px 10px;'>{c}</th>" for c in _TABLE_COLUMNS)
+
+    body_rows = []
+    for row in recent:
+        decision_label = html.escape(_DECISION_LABELS.get(row["decision"], _humanize(row["decision"])))
+        reason = row.get("reason")
+        if reason:
+            decision_cell = (
+                f"<span title='{html.escape(reason)}' "
+                f"style='cursor: help; border-bottom: 1px dotted currentColor;'>{decision_label}</span>"
+            )
+        else:
+            decision_cell = decision_label
+
+        cells = [
+            html.escape(row["ticket_id"]),
+            html.escape(row["title"] or ""),
+            html.escape(_humanize(row["severity"])),
+            html.escape(_humanize(row["issue_type"])),
+            decision_cell,
+            html.escape(_action_taken(row)),
+            html.escape(row["updated_at"]),
+        ]
+        body_rows.append(
+            "<tr>" + "".join(f"<td style='padding:4px 10px;'>{c}</td>" for c in cells) + "</tr>"
+        )
+
+    return (
+        "<table style='width:100%; border-collapse:collapse;'>"
+        f"<thead><tr>{header_cells}</tr></thead>"
+        f"<tbody>{''.join(body_rows)}</tbody>"
+        "</table>"
+    )
 
 
 def _approve(thread_id: str, ticket_id: str) -> None:
@@ -127,27 +171,13 @@ recent = incident_log.list_recent(limit=20)
 if not recent:
     st.caption("No tickets processed yet. Run orchestrator/run_graph_demo.py to generate some.")
 else:
-    # st.table (plain HTML) rather than st.dataframe (canvas/WebGL-based
-    # glide-data-grid): the canvas grid was confirmed rendering an empty
-    # container in testing -- correctly sized, but with nothing painted
-    # inside it. st.table has no such dependency and is a fine trade
-    # for a table this size (no sorting/resizing/CSV-download, but it
-    # always renders).
-    st.table(
-        [
-            {
-                "Ticket": row["ticket_id"],
-                "Title": row["title"],
-                "Severity": _humanize(row["severity"]),
-                "Issue Type": _humanize(row["issue_type"]),
-                "Decision": _DECISION_LABELS.get(row["decision"], _humanize(row["decision"])),
-                "Action Taken": _action_taken(row),
-                "Updated": row["updated_at"],
-            }
-            for row in recent
-        ],
-        hide_index=True,
-    )
+    # Hand-rolled HTML via st.markdown, not st.table/st.dataframe:
+    # st.dataframe's canvas/WebGL grid was confirmed rendering an empty
+    # container in earlier testing (correctly sized, nothing painted
+    # inside), and st.table gives no way to attach a per-cell tooltip.
+    # Plain HTML has neither problem.
+    st.caption("Hover over a Decision to see the reason, where one was recorded.")
+    st.markdown(_recent_tickets_table_html(recent), unsafe_allow_html=True)
 
 if st.button("Refresh"):
     st.rerun()

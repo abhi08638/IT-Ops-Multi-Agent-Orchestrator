@@ -23,6 +23,16 @@ import incident_log
 DASHBOARD_PATH = str(Path(__file__).resolve().parent.parent / "dashboard" / "app.py")
 
 
+def _table_html(at) -> str:
+    """The Recent Tickets table is hand-rolled HTML via st.markdown (not
+    st.table/st.dataframe), so find it among the other st.markdown calls
+    (e.g. the pending-approval cards) by looking for the <table> tag."""
+    for md in at.markdown:
+        if "<table" in md.value:
+            return md.value
+    raise AssertionError("Recent Tickets table not found in markdown output")
+
+
 def _seed(tmp_path, monkeypatch):
     monkeypatch.setattr(approvals, "DB_PATH", tmp_path / "test_approvals.db")
     monkeypatch.setattr(incident_log, "DB_PATH", tmp_path / "test_incidents.db")
@@ -93,20 +103,13 @@ def test_dashboard_table_shows_realistic_action_not_the_decision_code(tmp_path, 
     at = AppTest.from_file(DASHBOARD_PATH)
     at.run()
 
-    table = at.table[0].value
-    row = table[table["Ticket"] == "INC0012346"].iloc[0]
+    table_html = _table_html(at)
 
-    assert row["Action Taken"] == "Restarted service on vpn-auth-service"
-    assert row["Action Taken"] != row["Decision"]
-    assert "_" not in row["Action Taken"]  # no leftover snake_case
-
+    assert "Restarted service on vpn-auth-service" in table_html
+    assert "restart_service" not in table_html  # no leftover snake_case action code
     # rows with nothing actually executed show a placeholder, not a
-    # fabricated action
-    pending_row = table[table["Ticket"] == "INC0012354"].iloc[0]
-    assert pending_row["Action Taken"] == "—"
-
-    escalated_row = table[table["Ticket"] == "INC0012345"].iloc[0]
-    assert escalated_row["Action Taken"] == "—"
+    # fabricated action -- INC0012354 (pending) and INC0012345 (escalated)
+    assert table_html.count(">—<") >= 2
 
 
 def test_dashboard_table_humanizes_severity_and_issue_type(tmp_path, monkeypatch):
@@ -115,12 +118,37 @@ def test_dashboard_table_humanizes_severity_and_issue_type(tmp_path, monkeypatch
     at = AppTest.from_file(DASHBOARD_PATH)
     at.run()
 
-    table = at.table[0].value
-    row = table[table["Ticket"] == "INC0012354"].iloc[0]
+    table_html = _table_html(at)
 
-    assert row["Severity"] == "Medium"
-    assert row["Issue Type"] == "Network Latency"
-    assert row["Decision"] == "Pending Approval"
+    assert "Medium" in table_html
+    assert "Network Latency" in table_html
+    assert "network_latency" not in table_html
+    assert "Pending Approval" in table_html
+
+
+def test_dashboard_table_shows_reason_as_tooltip_on_escalated_row(tmp_path, monkeypatch):
+    _seed(tmp_path, monkeypatch)
+
+    at = AppTest.from_file(DASHBOARD_PATH)
+    at.run()
+
+    table_html = _table_html(at)
+
+    assert "title='too risky'" in table_html
+    assert "cursor: help" in table_html
+
+
+def test_dashboard_table_no_tooltip_for_rows_without_a_reason(tmp_path, monkeypatch):
+    """INC0012346 is auto_remediated with reason=None -- its Decision
+    cell must be plain text, not wrapped in a tooltip span."""
+    _seed(tmp_path, monkeypatch)
+
+    at = AppTest.from_file(DASHBOARD_PATH)
+    at.run()
+
+    table_html = _table_html(at)
+
+    assert "<td style='padding:4px 10px;'>Auto-remediated</td>" in table_html
 
 
 def test_dashboard_handles_empty_state_without_exceptions(tmp_path, monkeypatch):
