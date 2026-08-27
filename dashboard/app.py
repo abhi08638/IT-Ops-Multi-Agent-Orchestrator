@@ -13,6 +13,7 @@ and checkpointer in orchestrator/run_graph_demo.py.
 import asyncio
 import html
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
@@ -66,6 +67,22 @@ def _action_taken(row: dict) -> str:
     return f"{phrase} on {row['target']}"
 
 
+def _format_local_time(iso_str: str) -> str:
+    """Convert a stored UTC ISO timestamp (see incident_log.record()) to
+    the local system time, as MM/DD/YYYY HH:MM:SS AM/PM.
+
+    This is a single-user local tool -- the Streamlit server and the
+    browser viewing it run on the same machine -- so "local time" just
+    means the system's local timezone; astimezone() with no argument
+    does exactly that. Falls back to the raw string if it's ever
+    malformed, rather than breaking the whole table over one bad value.
+    """
+    try:
+        return datetime.fromisoformat(iso_str).astimezone().strftime("%m/%d/%Y %I:%M:%S %p")
+    except (TypeError, ValueError):
+        return iso_str
+
+
 _TABLE_COLUMNS = ["Ticket", "Title", "Severity", "Issue Type", "Decision", "Action Taken", "Updated"]
 
 
@@ -95,7 +112,7 @@ def _recent_tickets_table_html(recent: list[dict]) -> str:
             html.escape(_humanize(row["issue_type"])),
             decision_cell,
             html.escape(_action_taken(row)),
-            html.escape(row["updated_at"]),
+            html.escape(_format_local_time(row["updated_at"])),
         ]
         body_rows.append(
             "<tr>" + "".join(f"<td style='padding:4px 10px;'>{c}</td>" for c in cells) + "</tr>"

@@ -11,6 +11,7 @@ automated test, so it's not repeated here.
 """
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
@@ -149,6 +150,23 @@ def test_dashboard_table_no_tooltip_for_rows_without_a_reason(tmp_path, monkeypa
     table_html = _table_html(at)
 
     assert "<td style='padding:4px 10px;'>Auto-remediated</td>" in table_html
+
+
+def test_dashboard_table_shows_updated_time_in_local_12_hour_format(tmp_path, monkeypatch):
+    """The Updated column shows local time as MM/DD/YYYY HH:MM:SS AM/PM,
+    not the raw stored UTC ISO string."""
+    _seed(tmp_path, monkeypatch)
+
+    stored = incident_log.list_recent(limit=20)
+    row = next(r for r in stored if r["ticket_id"] == "INC0012346")
+    expected = datetime.fromisoformat(row["updated_at"]).astimezone().strftime("%m/%d/%Y %I:%M:%S %p")
+
+    at = AppTest.from_file(DASHBOARD_PATH)
+    at.run()
+
+    table_html = _table_html(at)
+    assert expected in table_html
+    assert row["updated_at"] not in table_html  # raw ISO string shouldn't leak through
 
 
 def test_dashboard_handles_empty_state_without_exceptions(tmp_path, monkeypatch):
