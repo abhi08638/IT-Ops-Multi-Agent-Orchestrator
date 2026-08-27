@@ -66,6 +66,15 @@ LOW_SEVERITY_TICKET = {
     "status": "open",
 }
 
+MEDIUM_SEVERITY_TICKET = {
+    "ticket_id": "INC0012354",
+    "title": "VPN throughput degraded during peak hours",
+    "description": "Users report significantly slower VPN speeds. Latency roughly doubled.",
+    "severity": "medium",
+    "affected_system": "vpn-auth-service",
+    "status": "open",
+}
+
 UNCLASSIFIABLE_TICKET = {
     "ticket_id": "INC9999999",
     "title": "Unspecified issue reported",

@@ -14,6 +14,8 @@ from pathlib import Path
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from tracing import traced_tool
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SERVER_PATH = PROJECT_ROOT / "mcp_server" / "server.py"
 
@@ -32,6 +34,7 @@ class MCPTools:
     def __init__(self, session: ClientSession):
         self._session = session
 
+    @traced_tool("check_ticket")
     async def check_ticket(self, ticket_id: str) -> dict:
         result = await self._session.call_tool("check_ticket", {"ticket_id": ticket_id})
         text = _text(result)
@@ -39,6 +42,7 @@ class MCPTools:
             raise RuntimeError(f"check_ticket failed: {text}")
         return json.loads(text)
 
+    @traced_tool("get_runbook")
     async def get_runbook(self, issue_type: str) -> str:
         result = await self._session.call_tool("get_runbook", {"issue_type": issue_type})
         text = _text(result)
@@ -46,6 +50,7 @@ class MCPTools:
             raise RunbookNotFoundError(text)
         return text
 
+    @traced_tool("run_remediation")
     async def run_remediation(self, action: str, target: str) -> dict:
         result = await self._session.call_tool(
             "run_remediation", {"action": action, "target": target}
